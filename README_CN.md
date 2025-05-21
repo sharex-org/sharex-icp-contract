@@ -1,5 +1,8 @@
 # ShareX Vault Backend
 
+[![English](https://img.shields.io/badge/language-English-blue.svg)](README.md)
+[![中文](https://img.shields.io/badge/语言-中文-red.svg)](README_CN.md)
+
 这是一个基于Internet Computer (IC)区块链平台的智能合约，用于管理ShareX生态系统中的品牌、商户、设备和交易数据。
 
 ## 功能概述

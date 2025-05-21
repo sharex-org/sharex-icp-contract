@@ -1,5 +1,8 @@
 # ShareX Vault Backend
 
+[![English](https://img.shields.io/badge/language-English-blue.svg)](README.md)
+[![中文](https://img.shields.io/badge/语言-中文-red.svg)](README_CN.md)
+
 This is a smart contract based on the Internet Computer (IC) blockchain platform, designed to manage brands, merchants, devices, and transaction data in the ShareX ecosystem.
 
 ## Features Overview
