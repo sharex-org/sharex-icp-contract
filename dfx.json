@@ -1,0 +1,17 @@
+{
+  "canisters": {
+    "sharex-vault-backend": {
+      "candid": "src/sharex-vault-backend/sharex-vault-backend.did",
+      "package": "sharex-vault-backend",
+      "type": "rust"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}

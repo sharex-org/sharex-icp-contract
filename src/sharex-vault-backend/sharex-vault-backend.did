@@ -1,0 +1,111 @@
+type BasicTransactionInfo = record {
+  date : text;
+  order_count : nat32;
+  device_hash : text;
+};
+type CanisterInfo = record {
+  cycles_balance : nat64;
+  is_upgrading : bool;
+  version : text;
+};
+type CountryInfo = record { iso2 : text; timestamp : nat64 };
+type DeviceInfo = record {
+  merchant_id : text;
+  partner_code : text;
+  device_type : text;
+  device_id : text;
+  timestamp : nat64;
+};
+type MerchantInfo = record {
+  location_id : text;
+  merchant_id : text;
+  iso2 : text;
+  location_encrypted : opt text;
+  timestamp : nat64;
+  merchant_type_encrypted : opt text;
+  merchant_name_encrypted : text;
+  description_encrypted : opt text;
+  verification : text;
+};
+type PartnerInfo = record {
+  iso2 : text;
+  partner_code : text;
+  partner_name : text;
+  description : text;
+  business_type : text;
+  timestamp : nat64;
+  verification : text;
+};
+type Result = variant { Ok; Err : text };
+type Result_1 = variant { Ok : CanisterInfo; Err : text };
+type Result_10 = variant { Ok : vec CountryInfo; Err : text };
+type Result_11 = variant { Ok : vec DeviceInfo; Err : text };
+type Result_12 = variant { Ok : vec MerchantInfo; Err : text };
+type Result_13 = variant { Ok : vec PartnerInfo; Err : text };
+type Result_14 = variant { Ok : vec BasicTransactionInfo; Err : text };
+type Result_2 = variant { Ok : nat64; Err : text };
+type Result_3 = variant { Ok : opt CountryInfo; Err : text };
+type Result_4 = variant { Ok : opt DeviceInfo; Err : text };
+type Result_5 = variant { Ok : opt MerchantInfo; Err : text };
+type Result_6 = variant { Ok : opt PartnerInfo; Err : text };
+type Result_7 = variant { Ok : StatsInfo; Err : text };
+type Result_8 = variant { Ok : opt BasicTransactionInfo; Err : text };
+type Result_9 = variant { Ok : opt vec TransactionDetail; Err : text };
+type Role = variant { Operator; Reader; Merchant; Admin };
+type StatsInfo = record {
+  cycles_balance : nat64;
+  transaction_batches_count : nat64;
+  countries_count : nat64;
+  merchants_count : nat64;
+  partners_count : nat64;
+  devices_count : nat64;
+};
+type TransactionDetail = record {
+  sharex_id_encrypted : opt text;
+  timestamp : nat64;
+  transaction_amount_encrypted : opt text;
+  user_id_encrypted : opt text;
+  additional_data : opt text;
+};
+service : () -> {
+  accept_cycles : () -> (nat64);
+  assign_role : (principal, Role) -> (Result);
+  complete_upgrade : (text) -> (Result);
+  get_canister_info : () -> (Result_1) query;
+  get_countries_count : () -> (Result_2) query;
+  get_country_info : (text) -> (Result_3) query;
+  get_device_info : (text) -> (Result_4) query;
+  get_devices_count : () -> (Result_2) query;
+  get_devices_count_by_partner : (text) -> (Result_2) query;
+  get_merchant_info : (text) -> (Result_5) query;
+  get_merchants_count : () -> (Result_2) query;
+  get_merchants_count_by_country : (text) -> (Result_2) query;
+  get_partner_info : (text) -> (Result_6) query;
+  get_partners_count : () -> (Result_2) query;
+  get_stats : () -> (Result_7) query;
+  get_transaction_batch_basic_info : (text, text) -> (Result_8) query;
+  get_transaction_batch_details : (text, text) -> (Result_9) query;
+  get_transaction_batches_count : () -> (Result_2) query;
+  list_countries : () -> (Result_10) query;
+  list_devices_by_merchant : (text) -> (Result_11) query;
+  list_merchants_by_country : (text) -> (Result_12) query;
+  list_partners : () -> (Result_13) query;
+  list_transaction_batches_by_device : (text) -> (Result_14) query;
+  prepare_upgrade : () -> (Result);
+  register_country : (text) -> (Result);
+  register_device : (text, text, text, text) -> (Result);
+  register_merchant : (
+      text,
+      text,
+      opt text,
+      text,
+      text,
+      opt text,
+      opt text,
+      text,
+    ) -> (Result);
+  register_partner : (text, text, text, text, text, text) -> (Result);
+  revoke_role : (principal) -> (Result);
+  rollback_upgrade : () -> (Result);
+  upload_transaction_batch : (text, text, vec TransactionDetail) -> (Result);
+}
