@@ -59,6 +59,57 @@ enum Role {
     Reader      // Reader: can only query data
 }
 
+// 统一API响应结构
+#[derive(CandidType, Deserialize, Clone, Debug, Serialize)]
+pub struct ApiResponse<T> {
+    code: u32,           // 状态码：0表示成功，非0表示错误
+    message: String,     // 消息：成功或错误信息
+    data: Option<T>,     // 数据：可选，成功时包含返回数据
+}
+
+// 实现ApiResponse的辅助方法
+impl<T> ApiResponse<T> {
+    // 创建成功响应
+    pub fn success(data: T, message: &str) -> Self {
+        ApiResponse {
+            code: 0,
+            message: message.to_string(),
+            data: Some(data),
+        }
+    }
+    
+    // 创建成功响应（无数据）
+    pub fn success_no_data(message: &str) -> ApiResponse<()> {
+        ApiResponse {
+            code: 0,
+            message: message.to_string(),
+            data: None,
+        }
+    }
+    
+    // 创建错误响应
+    pub fn error<E>(code: u32, message: &str) -> ApiResponse<E> {
+        ApiResponse {
+            code,
+            message: message.to_string(),
+            data: None,
+        }
+    }
+    
+    // 从Result转换为ApiResponse
+    pub fn from_result<E>(result: Result<T, E>, success_msg: &str) -> Self 
+    where E: std::fmt::Display {
+        match result {
+            Ok(data) => Self::success(data, success_msg),
+            Err(e) => Self {
+                code: 1, // 通用错误码
+                message: e.to_string(),
+                data: None,
+            },
+        }
+    }
+}
+
 // 2. Country Distribution Information Data Structure
 #[derive(CandidType, Deserialize, Clone, Debug, Serialize)]
 pub struct CountryInfo {
@@ -563,16 +614,20 @@ fn get_canister_info() -> Result<CanisterInfo, String> {
 /// * `iso2` - ISO2 country code
 ///
 /// # Returns
-/// * `Result<(), String>` - Success on success, error message on failure
+/// * `ApiResponse<()>` - Unified response structure
 #[ic_cdk::update]
-fn register_country(country_code: String) -> Result<(), String> {
+fn register_country(country_code: String) -> ApiResponse<()> {
     // Permission check
-    is_authorized(Role::Operator)?;
-    check_cycles_balance()?;
+    if let Err(e) = is_authorized(Role::Operator) {
+        return ApiResponse::<()>::error(403, &e);
+    }
+    if let Err(e) = check_cycles_balance() {
+        return ApiResponse::<()>::error(500, &e);
+    }
 
     // Validate input
     if country_code.is_empty() {
-        return Err("Country code cannot be empty".to_string());
+        return ApiResponse::<()>::error(400, "Country code cannot be empty");
     }
     // Check if the country code is already registered
     let country_exists = COUNTRY_STATS_REGISTRY.with(|registry| {
@@ -580,7 +635,7 @@ fn register_country(country_code: String) -> Result<(), String> {
     });
 
     if country_exists {
-        return Err(format!("Country code {} already exists", country_code));
+        return ApiResponse::<()>::error(409, &format!("Country code {} already exists", country_code));
     }
 
     let timestamp = time();
@@ -597,7 +652,7 @@ fn register_country(country_code: String) -> Result<(), String> {
 
     log_operation(format!("Registered country: {}", country_code));
 
-    Ok(())
+    ApiResponse::<()>::success_no_data(&format!("Country {} registered successfully", country_code))
 }
 
 /// Get country statistics
@@ -606,34 +661,38 @@ fn register_country(country_code: String) -> Result<(), String> {
 /// * `iso2` - ISO2 country code
 ///
 /// # Returns
-/// * `Result<Option<CountryInfo>, String>` - Country statistics on success, error message on failure
+/// * `ApiResponse<Option<CountryInfo>>` - Unified response structure with country statistics
 #[ic_cdk::query]
-fn get_country_info(country_code: String) -> Result<Option<CountryInfo>, String> {
+fn get_country_info(country_code: String) -> ApiResponse<Option<CountryInfo>> {
     // Permission check
-    is_authorized(Role::Reader)?;
+    if let Err(e) = is_authorized(Role::Reader) {
+        return ApiResponse::<()>::error(403, &e);
+    }
 
     let result = COUNTRY_STATS_REGISTRY.with(|registry| {
         registry.borrow().get(&StringWrapper(country_code.clone())).map(|stat| stat.clone())
     });
 
-    Ok(result)
+    ApiResponse::success(result, &format!("Country info for {} retrieved successfully", country_code))
 }
 
 /// Get all country statistics
 ///
 /// # Returns
-/// * `Result<Vec<CountryInfo>, String>` - Country statistics list on success, error message on failure
+/// * `ApiResponse<Vec<CountryInfo>>` - Unified response structure with country statistics list
 #[ic_cdk::query]
-fn list_countries() -> Result<Vec<CountryInfo>, String> {
+fn list_countries() -> ApiResponse<Vec<CountryInfo>> {
     // Permission check
-    is_authorized(Role::Reader)?;
+    if let Err(e) = is_authorized(Role::Reader) {
+        return ApiResponse::<()>::error(403, &e);
+    }
 
     let result = COUNTRY_STATS_REGISTRY.with(|registry| {
         let registry = registry.borrow();
         registry.iter().map(|(_, v)| v.clone()).collect()
     });
 
-    Ok(result)
+    ApiResponse::success(result, "Countries list retrieved successfully")
 }
 
 
@@ -647,12 +706,16 @@ fn list_countries() -> Result<Vec<CountryInfo>, String> {
 /// * `role` - Role to assign
 ///
 /// # Returns
-/// * `Result<(), String>` - Success on success, error message on failure
+/// * `ApiResponse<()>` - Unified response structure
 #[ic_cdk::update]
-fn assign_role(user: Principal, role: Role) -> Result<(), String> {
+fn assign_role(user: Principal, role: Role) -> ApiResponse<()> {
     // Permission check: only admins can assign roles
-    is_authorized(Role::Admin)?;
-    check_cycles_balance()?;
+    if let Err(e) = is_authorized(Role::Admin) {
+        return ApiResponse::<()>::error(403, &e);
+    }
+    if let Err(e) = check_cycles_balance() {
+        return ApiResponse::<()>::error(500, &e);
+    }
 
     // Check if the caller is an admin and is downgrading their own role to a non-admin role
     let caller = caller();
@@ -664,7 +727,7 @@ fn assign_role(user: Principal, role: Role) -> Result<(), String> {
         });
 
         if is_last_admin {
-            return Err("Error: cannot downgrade the last admin's role, this will cause the contract to lose management permissions".to_string());
+            return ApiResponse::<()>::error(400, "Error: cannot downgrade the last admin's role, this will cause the contract to lose management permissions");
         }
     }
 
@@ -675,7 +738,7 @@ fn assign_role(user: Principal, role: Role) -> Result<(), String> {
 
     log_operation(format!("Assigned role to user {}: {:?}", user, role));
 
-    Ok(())
+    ApiResponse::<()>::success_no_data(&format!("Role {:?} assigned to user {} successfully", role, user))
 }
 
 /// Revoke a user's role
@@ -724,18 +787,22 @@ fn register_partner(
     verification: String,
     description: String,
     business_type: String,
-) -> Result<(), String> {
+) -> ApiResponse<()> {
     // Permission check
-    is_authorized(Role::Operator)?;
-    check_cycles_balance()?;
+    if let Err(e) = is_authorized(Role::Operator) {
+        return ApiResponse::<()>::error(403, &e);
+    }
+    if let Err(e) = check_cycles_balance() {
+        return ApiResponse::<()>::error(500, &e);
+    }
 
     // Validate input
     if partner_code.is_empty() || partner_name.is_empty() || iso2.is_empty() {
-        return Err("Required fields cannot be empty".to_string());
+        return ApiResponse::<()>::error(400, "Required fields cannot be empty");
     }
 
     if description.len() > 1024 {
-        return Err("Description cannot exceed 1024 characters".to_string());
+        return ApiResponse::<()>::error(400, "Description cannot exceed 1024 characters");
     }
 
     // Check if the brand code is already registered
@@ -744,7 +811,7 @@ fn register_partner(
     });
 
     if partner_exists {
-        return Err(format!("Partner code {} already exists", partner_code));
+        return ApiResponse::<()>::error(409, &format!("Partner code {} already exists", partner_code));
     }
 
 
@@ -754,15 +821,15 @@ fn register_partner(
     });
 
     if !country_exists {
-        return Err(format!("Country code {} is not registered, please register the country first", iso2));
+        return ApiResponse::<()>::error(404, &format!("Country code {} is not registered, please register the country first", iso2));
     }
 
     let timestamp = time();
 
     let partner_info = PartnerInfo {
         partner_code: partner_code.clone(),
-        partner_name,
-        iso2,
+        partner_name: partner_name.clone(),
+        iso2: iso2.clone(),
         verification,
         description,
         business_type,
@@ -776,7 +843,7 @@ fn register_partner(
 
     log_operation(format!("Registered brand: {}", partner_code));
 
-    Ok(())
+    ApiResponse::<()>::success_no_data(&format!("Partner {} registered successfully", partner_name))
 }
 
 /// Get brand information
@@ -830,7 +897,7 @@ fn list_partners() -> Result<Vec<PartnerInfo>, String> {
 /// * `verification` - Certification number
 ///
 /// # Returns
-/// * `Result<(), String>` - Success on success, error message on failure
+/// * `ApiResponse<()>` - Unified response structure
 #[ic_cdk::update]
 fn register_merchant(
     merchant_name_encrypted: String,
@@ -841,18 +908,22 @@ fn register_merchant(
     location_encrypted: Option<String>,
     merchant_type_encrypted: Option<String>,
     verification: String,
-) -> Result<(), String> {
+) -> ApiResponse<()> {
     // Permission check
-    is_authorized(Role::Operator)?;
-    check_cycles_balance()?;
+    if let Err(e) = is_authorized(Role::Operator) {
+        return ApiResponse::<()>::error(403, &e);
+    }
+    if let Err(e) = check_cycles_balance() {
+        return ApiResponse::<()>::error(500, &e);
+    }
 
     // Validate input
     if merchant_name_encrypted.is_empty() || merchant_id.is_empty() || iso2.is_empty() {
-        return Err("Required fields cannot be empty".to_string());
+        return ApiResponse::<()>::error(400, "Required fields cannot be empty");
     }
 
     if merchant_id.len() < 2 || merchant_id.len() > 16 {
-        return Err("Merchant ID must be a 2-16 character identifier".to_string());
+        return ApiResponse::<()>::error(400, "Merchant ID must be a 2-16 character identifier");
     }
 
     // Check if the merchant ID is already registered
@@ -861,7 +932,7 @@ fn register_merchant(
     });
 
     if merchant_exists {
-        return Err(format!("Merchant ID {} already exists", merchant_id));
+        return ApiResponse::<()>::error(409, &format!("Merchant ID {} already exists", merchant_id));
     }
 
     // Check if the country code is already registered
@@ -870,7 +941,7 @@ fn register_merchant(
     });
 
     if !country_exists {
-        return Err(format!("Country code {} is not registered, please register the country first", iso2));
+        return ApiResponse::<()>::error(404, &format!("Country code {} is not registered, please register the country first", iso2));
     }
 
     let timestamp = time();
@@ -879,7 +950,7 @@ fn register_merchant(
         merchant_name_encrypted,
         merchant_id: merchant_id.clone(),
         description_encrypted,
-        iso2,
+        iso2: iso2.clone(),
         location_id,
         location_encrypted,
         merchant_type_encrypted,
@@ -894,7 +965,7 @@ fn register_merchant(
 
     log_operation(format!("Registered merchant: {}", merchant_id));
 
-    Ok(())
+    ApiResponse::<()>::success_no_data(&format!("Merchant {} registered successfully", merchant_id))
 }
 
 /// Get merchant information
@@ -903,17 +974,19 @@ fn register_merchant(
 /// * `merchant_id` - Merchant ID
 ///
 /// # Returns
-/// * `Result<Option<MerchantInfo>, String>` - Merchant information on success, error message on failure
+/// * `ApiResponse<Option<MerchantInfo>>` - Unified response structure with merchant information
 #[ic_cdk::query]
-fn get_merchant_info(merchant_id: String) -> Result<Option<MerchantInfo>, String> {
+fn get_merchant_info(merchant_id: String) -> ApiResponse<Option<MerchantInfo>> {
     // Permission check
-    is_authorized(Role::Reader)?;
+    if let Err(e) = is_authorized(Role::Reader) {
+        return ApiResponse::<()>::error(403, &e);
+    }
 
     let result = MERCHANT_REGISTRY.with(|registry| {
         registry.borrow().get(&StringWrapper(merchant_id.clone())).map(|info| info.clone())
     });
 
-    Ok(result)
+    ApiResponse::success(result, &format!("Merchant info for {} retrieved successfully", merchant_id))
 }
 
 /// List merchants by country
@@ -950,21 +1023,25 @@ fn list_merchants_by_country(iso2: String) -> Result<Vec<MerchantInfo>, String> 
 /// * `merchant_id` - Merchant ID
 ///
 /// # Returns
-/// * `Result<(), String>` - Success on success, error message on failure
+/// * `ApiResponse<()>` - Unified response structure
 #[ic_cdk::update]
 fn register_device(
     device_id: String,
     device_type: String,
     partner_code: String,
     merchant_id: String,
-) -> Result<(), String> {
+) -> ApiResponse<()> {
     // Permission check
-    is_authorized(Role::Operator)?;
-    check_cycles_balance()?;
+    if let Err(e) = is_authorized(Role::Operator) {
+        return ApiResponse::<()>::error(403, &e);
+    }
+    if let Err(e) = check_cycles_balance() {
+        return ApiResponse::<()>::error(500, &e);
+    }
 
     // Validate input
     if device_id.is_empty() || partner_code.is_empty() || merchant_id.is_empty() {
-        return Err("Required fields cannot be empty".to_string());
+        return ApiResponse::<()>::error(400, "Required fields cannot be empty");
     }
 
     // Check if the device ID is already registered
@@ -973,7 +1050,7 @@ fn register_device(
     });
 
     if device_exists {
-        return Err(format!("Device ID {} already exists", device_id));
+        return ApiResponse::<()>::error(409, &format!("Device ID {} already exists", device_id));
     }
 
     // Check if the brand code is already registered
@@ -982,7 +1059,7 @@ fn register_device(
     });
 
     if !partner_exists {
-        return Err(format!("Partner code {} does not exist, please register the partner first", partner_code));
+        return ApiResponse::<()>::error(404, &format!("Partner code {} does not exist, please register the partner first", partner_code));
     }
 
     // Check if the merchant ID is already registered
@@ -991,7 +1068,7 @@ fn register_device(
     });
 
     if !merchant_exists {
-        return Err(format!("Merchant ID {} does not exist, please register the merchant first", merchant_id));
+        return ApiResponse::<()>::error(404, &format!("Merchant ID {} does not exist, please register the merchant first", merchant_id));
     }
 
     let timestamp = time();
@@ -999,8 +1076,8 @@ fn register_device(
     let device_info = DeviceInfo {
         device_id: device_id.clone(),
         device_type,
-        partner_code,
-        merchant_id,
+        partner_code: partner_code.clone(),
+        merchant_id: merchant_id.clone(),
         timestamp,
     };
 
@@ -1011,7 +1088,7 @@ fn register_device(
 
     log_operation(format!("Registered device: {}", device_id));
 
-    Ok(())
+    ApiResponse::<()>::success_no_data(&format!("Device {} registered successfully", device_id))
 }
 
 /// Get device information
@@ -1323,11 +1400,13 @@ fn get_devices_count_by_partner(partner_code: String) -> Result<usize, String> {
 /// Query comprehensive statistics
 ///
 /// # Returns
-/// * `Result<StatsInfo, String>` - Comprehensive statistics on success, error message on failure
+/// * `ApiResponse<StatsInfo>` - Unified response structure with comprehensive statistics
 #[ic_cdk::query]
-fn get_stats() -> Result<StatsInfo, String> {
+fn get_stats() -> ApiResponse<StatsInfo> {
     // Permission check
-    is_authorized(Role::Reader)?;
+    if let Err(e) = is_authorized(Role::Reader) {
+        return ApiResponse::<()>::error(403, &e);
+    }
 
     let countries_count = COUNTRY_STATS_REGISTRY.with(|registry| registry.borrow().len() as usize);
     let partners_count = PARTNER_REGISTRY.with(|registry| registry.borrow().len() as usize);
@@ -1339,14 +1418,16 @@ fn get_stats() -> Result<StatsInfo, String> {
 
     log_operation("Queried stats".to_string());
 
-    Ok(StatsInfo {
+    let stats = StatsInfo {
         partners_count,
         merchants_count,
         devices_count,
         transaction_batches_count,
         cycles_balance,
         countries_count,
-    })
+    };
+    
+    ApiResponse::success(stats, "System statistics retrieved successfully")
 }
 
 
